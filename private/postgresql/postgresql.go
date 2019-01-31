@@ -35,6 +35,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/mitchellh/copystructure"
+	"github.com/otiai10/copy"
 	"go.uber.org/zap"
 )
 
@@ -56,6 +57,8 @@ var log = slog.S()
 type Manager struct {
 	pgBinPath             string
 	dataDir               string
+	indexDir              string
+	walDir                string
 	parameters            common.Parameters
 	recoveryParameters    common.Parameters
 	hba                   []string
@@ -95,10 +98,12 @@ func SetLogger(l *zap.SugaredLogger) {
 	log = l
 }
 
-func NewManager(pgBinPath string, dataDir string, localConnParams, replConnParams ConnParams, suAuthMethod, suUsername, suPassword, replAuthMethod, replUsername, replPassword string, requestTimeout time.Duration) *Manager {
+func NewManager(pgBinPath string, dataDir string, indexDir string, walDir string, localConnParams, replConnParams ConnParams, suAuthMethod, suUsername, suPassword, replAuthMethod, replUsername, replPassword string, requestTimeout time.Duration) *Manager {
 	return &Manager{
 		pgBinPath:             pgBinPath,
 		dataDir:               filepath.Join(dataDir, "postgres"),
+		indexDir:              indexDir,
+		walDir:                walDir,
 		parameters:            make(common.Parameters),
 		recoveryParameters:    make(common.Parameters),
 		curParameters:         make(common.Parameters),
@@ -174,6 +179,17 @@ func (p *Manager) Init(initConfig *InitConfig) error {
 
 	pwfile.WriteString(p.suPassword)
 
+	if p.indexDir != "" {
+		if err = common.RemoveContents(p.indexDir); err != nil {
+			return err
+		}
+	}
+	if p.walDir != "" {
+		if err = common.RemoveContents(p.walDir); err != nil {
+			return err
+		}
+	}
+
 	name := filepath.Join(p.pgBinPath, "initdb")
 	cmd := exec.Command(name, "-D", p.dataDir, "-U", p.suUsername)
 	if p.suAuthMethod == "md5" {
@@ -196,10 +212,19 @@ func (p *Manager) Init(initConfig *InitConfig) error {
 	cmd.Stderr = os.Stderr
 	if err = cmd.Run(); err != nil {
 		err = fmt.Errorf("error: %v", err)
+	} else {
+		err = p.setupWalDir()
 	}
+
 	// remove the dataDir, so we don't end with an half initialized database
 	if err != nil {
 		os.RemoveAll(p.dataDir)
+		if p.indexDir != "" {
+			common.RemoveContents(p.indexDir)
+		}
+		if p.walDir != "" {
+			common.RemoveContents(p.walDir)
+		}
 		return err
 	}
 	return nil
@@ -215,6 +240,16 @@ func (p *Manager) Restore(command string) error {
 		err = fmt.Errorf("cannot create data dir: %v", err)
 		goto out
 	}
+	if p.indexDir != "" {
+		if err = common.RemoveContents(p.indexDir); err != nil {
+			goto out
+		}
+	}
+	if p.walDir != "" {
+		if err = common.RemoveContents(p.walDir); err != nil {
+			goto out
+		}
+	}
 	cmd = exec.Command("/bin/sh", "-c", command)
 	log.Debugw("execing cmd", "cmd", cmd)
 
@@ -224,11 +259,19 @@ func (p *Manager) Restore(command string) error {
 	if err = cmd.Run(); err != nil {
 		err = fmt.Errorf("error: %v", err)
 		goto out
+	} else {
+		err = p.setupWalDir()
 	}
 	// On every error remove the dataDir, so we don't end with an half initialized database
 out:
 	if err != nil {
 		os.RemoveAll(p.dataDir)
+		if p.indexDir != "" {
+			common.RemoveContents(p.indexDir)
+		}
+		if p.walDir != "" {
+			common.RemoveContents(p.walDir)
+		}
 		return err
 	}
 	return nil
@@ -789,10 +832,12 @@ func (p *Manager) SyncFromFollowedPGRewind(followedConnParams ConnParams, passwo
 	// Pipe command's std[err|out] to parent.
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("error: %v", err)
+	if err = cmd.Run(); err != nil {
+		err = fmt.Errorf("error: %v", err)
+	} else {
+		err = p.setupWalDir()
 	}
-	return nil
+	return err
 }
 
 func (p *Manager) SyncFromFollowed(followedConnParams ConnParams, replSlot string) error {
@@ -835,10 +880,12 @@ func (p *Manager) SyncFromFollowed(followedConnParams ConnParams, replSlot strin
 	// Pipe command's std[err|out] to parent.
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("error: %v", err)
+	if err = cmd.Run(); err != nil {
+		err = fmt.Errorf("error: %v", err)
+	} else {
+		err = p.setupWalDir()
 	}
-	return nil
+	return err
 }
 
 func (p *Manager) RemoveAll() error {
@@ -857,7 +904,20 @@ func (p *Manager) RemoveAll() error {
 	if started {
 		return fmt.Errorf("cannot remove postregsql database. Instance is active")
 	}
-	return os.RemoveAll(p.dataDir)
+	if err := os.RemoveAll(p.dataDir); err != nil {
+		return err
+	}
+	if p.indexDir != "" {
+		if err := common.RemoveContents(p.indexDir); err != nil {
+			return err
+		}
+	}
+	if p.walDir != "" {
+		if err := common.RemoveContents(p.walDir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *Manager) GetSystemData() (*SystemData, error) {
@@ -940,4 +1000,23 @@ func (p *Manager) IsRestartRequired(changedParams []string) (bool, error) {
 	} else {
 		return isRestartRequiredUsingPendingRestart(ctx, p.localConnParams)
 	}
+}
+
+func (p *Manager) setupWalDir() error {
+	var err error
+
+	// setup symlink from pg_wal to walDir
+	if p.walDir != "" {
+		fromWalDir := filepath.Join(p.dataDir, "pg_wal")
+
+		if err = copy.Copy(fromWalDir, p.walDir); err != nil {
+			err = fmt.Errorf("error: %v", err)
+		} else if err = os.RemoveAll(fromWalDir); err != nil {
+			err = fmt.Errorf("error: %v", err)
+		} else if err = os.Symlink(p.walDir, fromWalDir); err != nil {
+			err = fmt.Errorf("error: %v", err)
+		}
+	}
+
+	return err
 }

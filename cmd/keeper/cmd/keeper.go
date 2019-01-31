@@ -93,6 +93,8 @@ type config struct {
 
 	uid                     string
 	dataDir                 string
+	indexDir                string
+	walDir                  string
 	debug                   bool
 	pgListenAddress         string
 	pgPort                  string
@@ -122,6 +124,8 @@ func init() {
 	CmdKeeper.PersistentFlags().StringVar(&cfg.uid, "id", "", "keeper uid (must be unique in the cluster and can contain only lower-case letters, numbers and the underscore character). If not provided a random uid will be generated.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.uid, "uid", "", "keeper uid (must be unique in the cluster and can contain only lower-case letters, numbers and the underscore character). If not provided a random uid will be generated.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.dataDir, "data-dir", "", "data directory")
+	CmdKeeper.PersistentFlags().StringVar(&cfg.indexDir, "index-dir", "", "index directory that is managed by the keeper when performing pg_basebackup or pg_rewind duties")
+	CmdKeeper.PersistentFlags().StringVar(&cfg.walDir, "wal-dir", "", "wal directory to be symlinked with pg_wal after a new initialized pg cluster")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgListenAddress, "pg-listen-address", "", "postgresql instance listening address")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgPort, "pg-port", "5432", "postgresql instance listening port")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgBinPath, "pg-bin-path", "", "absolute path to postgresql binaries. If empty they will be searched in the current PATH")
@@ -295,9 +299,11 @@ func (p *PostgresKeeper) createPGParameters(db *cluster.DB) common.Parameters {
 		parameters[k] = v
 	}
 
-	parameters["listen_addresses"] = fmt.Sprintf("127.0.0.1,%s", p.pgListenAddress)
+	// parameters["listen_addresses"] = fmt.Sprintf("127.0.0.1,%s", p.pgListenAddress)
+	parameters["listen_addresses"] = "*"
 
-	parameters["port"] = p.pgPort
+	// parameters["port"] = p.pgPort
+	parameters["port"] = "5432"
 	// TODO(sgotti) max_replication_slots needs to be at least the
 	// number of existing replication slots or startup will
 	// fail.
@@ -400,6 +406,8 @@ type PostgresKeeper struct {
 	bootUUID string
 
 	dataDir             string
+	indexDir            string
+	walDir              string
 	listenAddress       string
 	port                string
 	pgListenAddress     string
@@ -443,12 +451,34 @@ func NewPostgresKeeper(cfg *config, end chan error) (*PostgresKeeper, error) {
 		return nil, fmt.Errorf("cannot get absolute datadir path for %q: %v", cfg.dataDir, err)
 	}
 
+	// Clean and get absolute indexdir path
+	indexDir := ""
+	if cfg.indexDir != "" {
+		var err error
+		indexDir, err = filepath.Abs(cfg.indexDir)
+		if err != nil {
+			return nil, fmt.Errorf("cannot get absolute indexdir path for %q: %v", cfg.indexDir, err)
+		}
+	}
+
+	// Clean and get absolute waldir path
+	walDir := ""
+	if cfg.walDir != "" {
+		var err error
+		walDir, err = filepath.Abs(cfg.walDir)
+		if err != nil {
+			return nil, fmt.Errorf("cannot get absolute waldir path for %q: %v", cfg.walDir, err)
+		}
+	}
+
 	p := &PostgresKeeper{
 		cfg: cfg,
 
 		bootUUID: common.UUID(),
 
-		dataDir: dataDir,
+		dataDir:  dataDir,
+		indexDir: indexDir,
+		walDir:   walDir,
 
 		pgListenAddress:     cfg.pgListenAddress,
 		pgPort:              cfg.pgPort,
@@ -734,7 +764,7 @@ func (p *PostgresKeeper) Start(ctx context.Context) {
 
 	// TODO(sgotti) reconfigure the various configurations options
 	// (RequestTimeout) after a changed cluster config
-	pgm := postgresql.NewManager(p.pgBinPath, p.dataDir, p.getLocalConnParams(), p.getLocalReplConnParams(), p.pgSUAuthMethod, p.pgSUUsername, p.pgSUPassword, p.pgReplAuthMethod, p.pgReplUsername, p.pgReplPassword, p.requestTimeout)
+	pgm := postgresql.NewManager(p.pgBinPath, p.dataDir, p.indexDir, p.walDir, p.getLocalConnParams(), p.getLocalReplConnParams(), p.pgSUAuthMethod, p.pgSUUsername, p.pgSUPassword, p.pgReplAuthMethod, p.pgReplUsername, p.pgReplPassword, p.requestTimeout)
 	p.pgm = pgm
 
 	p.pgm.StopIfStarted(true)
@@ -1707,8 +1737,10 @@ func (p *PostgresKeeper) generateHBA(cd *cluster.ClusterData, db *cluster.DB, on
 	// Matched local connections are for postgres database and suUsername user with md5 auth
 	// Matched local replication connections are for replUsername user with md5 auth
 	computedHBA := []string{
-		fmt.Sprintf("local postgres %s %s", p.pgSUUsername, p.pgSUAuthMethod),
-		fmt.Sprintf("local replication %s %s", p.pgReplUsername, p.pgReplAuthMethod),
+		// fmt.Sprintf("local postgres %s %s", p.pgSUUsername, p.pgSUAuthMethod),
+		// fmt.Sprintf("local replication %s %s", p.pgReplUsername, p.pgReplAuthMethod),
+		"local all postgres trust",
+		"local replication postgres trust",
 	}
 
 	switch *cd.Cluster.DefSpec().DefaultSUReplAccessMode {

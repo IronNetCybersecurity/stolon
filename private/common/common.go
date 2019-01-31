@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -32,7 +33,7 @@ const (
 	SentinelLeaderKey = "sentinel-leader"
 )
 
-const PgUnixSocketDirectories = "/tmp"
+const PgUnixSocketDirectories = "/var/run/postgresql"
 
 type Role string
 
@@ -88,6 +89,26 @@ func (s Parameters) Diff(newParams Parameters) []string {
 		}
 	}
 	return changedParams
+}
+
+// RemoveContents deletes all directories and files in a given directory, but not the directory itself.
+func RemoveContents(dir string) error {
+    d, err := os.Open(dir)
+    if err != nil {
+        return err
+    }
+    defer d.Close()
+    names, err := d.Readdirnames(-1)
+    if err != nil {
+        return err
+    }
+    for _, name := range names {
+        err = os.RemoveAll(filepath.Join(dir, name))
+        if err != nil {
+            return err
+        }
+    }
+    return nil
 }
 
 // WriteFileAtomicFunc atomically writes a file, it achieves this by creating a
