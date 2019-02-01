@@ -24,12 +24,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sorintlab/stolon/cmd"
-	"github.com/sorintlab/stolon/internal/cluster"
-	"github.com/sorintlab/stolon/internal/common"
-	"github.com/sorintlab/stolon/internal/flagutil"
-	slog "github.com/sorintlab/stolon/internal/log"
-	"github.com/sorintlab/stolon/internal/store"
-	"github.com/sorintlab/stolon/internal/util"
+	"github.com/sorintlab/stolon/private/cluster"
+	"github.com/sorintlab/stolon/private/common"
+	"github.com/sorintlab/stolon/private/flagutil"
+	slog "github.com/sorintlab/stolon/private/log"
+	"github.com/sorintlab/stolon/private/store"
+	"github.com/sorintlab/stolon/private/util"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/sorintlab/pollon"

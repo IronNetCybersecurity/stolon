@@ -22,8 +22,8 @@ import (
 	"text/tabwriter"
 
 	cmdcommon "github.com/sorintlab/stolon/cmd"
-	"github.com/sorintlab/stolon/internal/cluster"
-	"github.com/sorintlab/stolon/internal/store"
+	"github.com/sorintlab/stolon/private/cluster"
+	"github.com/sorintlab/stolon/private/store"
 
 	"github.com/spf13/cobra"
 )

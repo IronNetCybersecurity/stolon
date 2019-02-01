@@ -21,8 +21,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sorintlab/stolon/internal/cluster"
-	"github.com/sorintlab/stolon/internal/common"
+	"github.com/sorintlab/stolon/private/cluster"
+	"github.com/sorintlab/stolon/private/common"
 )
 
 var curUID int

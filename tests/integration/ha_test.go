@@ -27,10 +27,10 @@ import (
 	"time"
 
 	"github.com/satori/go.uuid"
-	"github.com/sorintlab/stolon/internal/cluster"
-	"github.com/sorintlab/stolon/internal/common"
-	pg "github.com/sorintlab/stolon/internal/postgresql"
-	"github.com/sorintlab/stolon/internal/store"
+	"github.com/sorintlab/stolon/private/cluster"
+	"github.com/sorintlab/stolon/private/common"
+	pg "github.com/sorintlab/stolon/private/postgresql"
+	"github.com/sorintlab/stolon/private/store"
 )
 
 const (

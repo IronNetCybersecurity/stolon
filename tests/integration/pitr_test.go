@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/satori/go.uuid"
-	"github.com/sorintlab/stolon/internal/cluster"
-	"github.com/sorintlab/stolon/internal/common"
-	"github.com/sorintlab/stolon/internal/store"
+	"github.com/sorintlab/stolon/private/cluster"
+	"github.com/sorintlab/stolon/private/common"
+	"github.com/sorintlab/stolon/private/store"
 )
 
 func TestPITR(t *testing.T) {

@@ -30,8 +30,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sorintlab/stolon/internal/common"
-	slog "github.com/sorintlab/stolon/internal/log"
+	"github.com/sorintlab/stolon/private/common"
+	slog "github.com/sorintlab/stolon/private/log"
 
 	_ "github.com/lib/pq"
 	"github.com/mitchellh/copystructure"
